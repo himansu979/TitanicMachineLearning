@@ -1,0 +1,158 @@
+---
+title: "Machine Learning Using Titanic Dataset (Exploratory Analysis)"
+author: "Himansu Sahoo"
+date: "October 15, 2015"
+output: html_document
+---
+
+### Read the dataset
+```{r}
+#train_raw <- read.csv(file="../titanic-train.csv")
+#test_raw <- read.csv(file="../titanic-test.csv")
+train_raw <- read.csv(file="../titanic-train.csv", na.strings=c("", " ", "NA", "NAN"))
+test_raw <- read.csv(file="../titanic-test.csv", na.strings=c("", " ", "NA", "NAN"))
+# treat all empty values, NAN as NA's
+```
+
+#### Step 1 : check the dimensions, length, class of variables
+```{r}
+dim(train_raw)
+# train_raw has 891 rows/observations and 12 variables.
+#names(train_raw)
+#sapply(train_raw, length) # all variables have same length
+sapply(train_raw, class)
+dim(test_raw)
+# test_raw has 418 rows/observations and 11 variables.
+#names(test_raw)
+#sapply(test_raw, length) # all variables have same length
+#sapply(test_raw, class)
+#head(train_raw)
+#head(test_raw)
+```
+Just looking at these, test\_raw has one variable less, Survived, which is the response/target variable. All variables have same length. test\_raw variables have same class as train\_raw.
+
+#### Step 2 : `str()`, `summary()`, `head()`, `tail()` of the dataset
+```{r}
+#str(train_raw)
+#str(test_raw)
+#head(train_raw, n=100) # print first 100 rows
+#summary(train_raw)
+#summary(test_raw)
+```
+
+Looking at `str()` for the dataset four variables; PassengerId, Name, Ticket, Cabin are just unique identifiers for each person. They are not helpful for the model. remove the variables.
+looking at `head(dataset, n=100)`, there are lots of data are missing in Cabin variable.
+It will be helpful to read them as NA's by modifing the `read.csv()` command.
+
+Looking at `summary(train_raw)`, we see Age has 177 NA's, Cabin has 687 NA's, Embarked has 2 NA's.
+
+similarly in `summary(test_raw)`, we see Age has 86 NA's, Fare has 1 NA, Cabin has 327 NA's.
+
+#### Step 3 : Data cleaning : Missing value treatment
+```{r}
+#colSums(is.na(train_raw)) # will shows NA's for each variable
+#colSums(is.na(test_raw))
+func_ratioNA <- function(x) length(x[x==""])/length(x)
+perc_NA <- apply(train_raw, 2, FUN = func_ratioNA)
+print(perc_NA) # percentage of NA's in the dataset
+```
+
+Age has 20\%, Cabin has 77\%, Embarked has 0.2\% missing values. Rules of thumb is to discard the variable having more than 30\% missing values.
+
+```{r}
+#names(train_raw)
+train_cleaned <- train_raw[, -which(perc_NA>0.30)]
+#names(train_cleaned) # Cabin is removed
+cat("train_cleaned : dimension :  ", dim(train_cleaned) , "\n")
+remove_trainvar <- names(train_cleaned) %in% c("PassengerId", "Name", "Ticket", "Cabin")
+train_final <- train_cleaned[, !remove_trainvar]
+#names(train_final) # "PassengerId", "Name", "Ticket", "Cabin" are removed
+cat("train_final : dimension :  ", dim(train_final) , "\n")
+apply(train_final, 2, FUN = func_ratioNA)
+```
+
+#### Step 4 : Data cleaning for test\_data
+```{r}
+remove_testvar <- names(test_raw) %in% c("PassengerId", "Name", "Ticket", "Cabin")
+test_final <- test_raw[, !remove_testvar]
+cat("test_final : dimension :  ", dim(test_final) , "\n")
+apply(test_final, 2, FUN = func_ratioNA)
+```
+
+#### Step 5 : Data visualization
+
+```{r echo=FALSE}
+plotvar <- function(x){
+            is_factor <- is.factor(x)
+        if (is_factor == "FALSE"){
+                par(mfrow=c(1, 2), pty = "s")
+                hist(x, col="blue", breaks=50)
+                hist_entries <- length(x)
+                hist_mean <- mean(x, na.rm=TRUE)
+                hist_med <- median(x, na.rm=TRUE)
+                hist_sd <- sd(x, na.rm=TRUE)
+                legend("topright", legend = c(paste("Entries = ", hist_entries), 
+            paste("Mean =", round(hist_mean, 1)),
+            paste("Median =",round(hist_med, 1)),
+            paste("Std.Dev =", round(hist_sd, 1))))#  , bty = "n")
+
+            boxplot(x, main="Box Plot", horizontal=TRUE, col="red")
+        }else{
+          par(mfrow=c(1, 1), pty = "s") # square plotting
+            barplot(summary(x)) # summary will include NA's, while table don't
+            legend("topright", legend = levels(x))          
+        }
+}
+
+```
+
+```{r}
+plotvar(train_final$Pclass)
+```
+```{r fig.width=4, fig.height=4}
+plotvar(train_final$Sex)
+```
+```{r}
+plotvar(train_final$Age)
+```
+```{r}
+plotvar(train_final$SibSp)
+```
+```{r}
+plotvar(train_final$Parch)
+```
+```{r}
+plotvar(train_final$Fare)
+```
+```{r fig.width=4, fig.height=4}
+plotvar(train_final$Embarked)
+```
+
+#### Step 6 : Data cleaning : Checking Outliers
+Looking at the box plot for Fare variable, there is lots of data outside the IQR.
+
+```{r echo=FALSE}
+perc_outlier <- function(x){
+        if(class(x) == "factor"){
+                ( length(x)/length(x) )
+        }else{
+                x <- x[!is.na(x)]
+                not_outlier <- (x > (quantile(x, 0.25) - 1.5*IQR(x))) & (x< (quantile(x, 0.75) + 1.5*IQR(x)))
+                length(x[!not_outlier])/length(x)
+        }
+}
+```
+
+```{r}
+perc_outlier(train_final$Fare) # to check percentage of outlier
+# 13\% of Fare data are outlier. Lets keep it now. we will study later.
+```
+
+
+
+
+
+
+
+
+

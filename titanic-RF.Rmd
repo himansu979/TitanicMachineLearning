@@ -1,0 +1,256 @@
+---
+title: "Machine Learning Using Titanic Dataset (Random Forest)"
+author: "Himansu Sahoo"
+date: "October 15, 2015"
+output: html_document
+---
+
+#### Getting the Data into R
+```{r}
+train_raw <- read.csv(file="../titanic-train.csv", na.strings=c("", " ", "NA", "NAN"))
+test_raw <- read.csv(file="../titanic-test.csv", na.strings=c("", " ", "NA", "NAN"))
+# treat all empty values, NAN as NA's
+```
+
+In the model, we will use 7 predictors, Survived is the response/target variable.
+
+#### Check the response variable
+```{r fig.width=4, fig.height=4}
+class(train_raw$Survived) # response variable is an integer
+str(train_raw$Survived)
+summary(train_raw$Survived) # summary() gives five number summary
+table(train_raw$Survived)
+barplot(table(train_raw$Survived))
+#str(train_raw)
+```
+
+First change the response variable to a factor variable.
+
+```{r fig.width=4, fig.height=4}
+train_raw$Survived <- as.factor(train_raw$Survived)
+class(train_raw$Survived) # Now it is a factor variable
+str(train_raw$Survived) # Factor w/ 2 levels "0","1": 1 2 2 2 1 1 1 1 2 2 ...
+levels(train_raw$Survived)
+##summary(train_raw$Survived)
+table(train_raw$Survived) # table() is same as summary() for a factor variable
+prop.table(table(train_raw$Survived))
+#barplot(table(train_raw$Survived))
+barplot(prop.table(table(train_raw$Survived)))
+#str(train_raw)
+```
+
+#### Step 1 : Data cleaning (train data)
+
+```{r}
+#names(train_raw)
+cat("train_raw : dimension :  ", dim(train_raw) , "\n")
+func_ratioNA <- function(x) length(x[x==""])/length(x)
+remove_trainvar <- names(train_raw) %in% c("PassengerId", "Name", "Ticket", "Cabin")
+train_final <- train_raw[, !remove_trainvar]
+#names(train_final) # "PassengerId", "Name", "Ticket", "Cabin" are removed
+cat("train_final : dimension :  ", dim(train_final) , "\n")
+apply(train_final, 2, FUN = func_ratioNA)
+```
+Age and Embarked have missing values.
+
+#### Step 2 : Data cleaning (test data)
+```{r}
+cat("test_raw : dimension :  ", dim(test_raw) , "\n")
+remove_testvar <- names(test_raw) %in% c("PassengerId", "Name", "Ticket", "Cabin")
+test_final <- test_raw[, !remove_testvar]
+cat("test_final : dimension :  ", dim(test_final) , "\n")
+apply(test_final, 2, FUN = func_ratioNA)
+```
+
+Age and Fare have missing values.
+The response variable Survived is missing in the test data.
+
+### Step 3 : Fitting Random Forest Model
+
+We will use the `caret` package in R to build the `randomForest` model with **method=rf**.
+
+#### Splitting data into a training and validation set
+
+We will use the `createDataPartition` function to split the `train\_final` dataset into 70\% train\_set and 30\% valid\_set. Set seed in the beginning to reproduce the same result in future.
+
+Random forest will not work in case of NA's. The response variable should be categorical with 2 levels. In order to avoid the problem, we changed earlier the response variable from integer to a factor variable with 2 levels. Now lets treat the missing values. Age and Embarked has missing values in the training set. Replace Age by -1 and Embarked by the highest category.
+
+```{r}
+colSums(is.na(train_final))
+train_final$Age[is.na(train_final$Age)] <- -1
+train_final$Embarked[is.na(train_final$Embarked)] <- "S"  # Embarked has 2 missing values
+colSums(is.na(train_final))
+```
+
+
+```{r}
+#str(train_final)
+library(caret)  # this also calls the rpart
+set.seed(1099)
+inTrain <- createDataPartition(y=train_final$Survived, p=0.70, list=FALSE)
+train_set <- train_final[inTrain,]
+valid_set <- train_final[-inTrain,]
+```
+
+
+```{r}
+set.seed(1099)
+rf_model <- train(Survived~., method="rf", data=train_set)
+```
+
+```
+# ERROR
+## Warning in train.default(x, y, weights = w, ...): You are trying to do
+## regression and your outcome only has two possible values Are you trying to
+## do classification? If so, use a 2 level factor as your outcome column.
+```
+```
+# ERROR
+## Warning in randomForest.default(x, y, mtry = param$mtry, ...): The response
+## has five or fewer unique values. Are you sure you want to do regression?
+```
+The response variable is integer with only two value 0 and 1 (less than five unique values).
+Thats why the model thinks the problem as regression.
+To avoid this problem, we changed earlier the response variable to a factor variable with 2 levels.
+
+#### print some parameters of the model
+```{r}
+class(rf_model)  # output is "train"         "train.formula"
+print(rf_model) # str(), summary() will give rubbish
+names(rf_model)
+ls(rf_model) # ls() is same as names() except it gives an alphabateical list
+rf_model$method
+rf_model$modelType
+rf_model$results
+rf_model$bestTune
+rf_model$metric
+rf_model$finalModel # the output is randomForest
+rf_model$perfNames
+rf_model$coefnames
+rf_model$xlevels
+```
+
+#### variable importance
+```{r}
+rf_imp <- varImp(rf_model, scale=FALSE)
+rf_imp # sorts in decreasing order, class is varImp.train
+# by default varImp returns scaled results in the range 0-100
+#class(rf_model$finalModel) # class is a randomForest object
+#varImp(rf_model$finalModel) # class is a dataframe
+###importance(rf_model) # will not work
+#Error in UseMethod("importance") : 
+#  no applicable method for 'importance' applied to an object of class "c('train', #'train.formula')"
+#round(importance(rf_model$finalModel), 2) # only works with randomForest object, class is a matrix
+```
+
+
+```{r fig.width=4, fig.height=4}
+plot(rf_model) # plot of Accuracy vrs. selected predictors
+```
+```{r fig.width=4, fig.height=4}
+plot(rf_model$finalModel) # Error vrs. no of trees
+```
+```{r fig.width=4, fig.height=4}
+plot(rf_imp, top=10) # top 10 most important variables
+```
+```{r fig.width=4, fig.height=4}
+varImpPlot(rf_model$finalModel) # this will only work for a randomForest object
+```
+
+#### Apply RF model on 70\% train set
+
+##### confusion matrix using the finalModel
+```{r}
+table(train_set$Survived)
+#predict(rf_model) # this give error, needs a newdata argument
+rf_pred_final <- predict(rf_model$finalModel) # the output is a factor variable
+table(rf_pred_final)
+confusionMatrix(rf_pred_final, train_set$Survived)
+```
+
+```
+Error in predict.randomForest(modelFit, newdata) : 
+  variables in the training data missing in newdata
+```
+
+##### Apply the rf\_model on the train\_set
+```{r}
+table(train_set$Survived)
+train_rf_predict <- predict(rf_model, newdata=train_set)
+table(train_rf_predict)
+confusionMatrix(train_rf_predict, train_set$Survived)
+```
+
+Do the missing values treatment, otherwise the confusion matrix will give problem. Train function will be fine.
+```
+ERROR : Error in table(data, reference, dnn = dnn, ...) : 
+  all arguments must have the same length
+```
+
+#### Apply the rf\_model on 30\% valid\_set
+```{r}
+table(valid_set$Survived)
+valid_rf_predict <- predict(rf_model, newdata=valid_set)
+table(valid_rf_predict)
+confusionMatrix(valid_rf_predict, valid_set$Survived)
+```
+
+
+
+
+
+## Calculate ROC Curve (using pROC package)
+
+In order to plot the ROC curve, we need to convert the response variable from 0 and 1 to FALSE and TRUE. Otherwise the following error will appear.
+
+```
+Error in train.default(x, y, weights = w, ...) : 
+  At least one of the class levels is not a valid R variable name; This will cause errors when class probabilities are generated because the variables names will be converted to  X0, X1 . Please use factor levels that can be used as valid R variable names  (see ?make.names for help).
+```
+
+```{r}
+levels(train_final$Survived)[levels(train_final$Survived)=="0"] <- "No"
+levels(train_final$Survived)[levels(train_final$Survived)=="1"] <- "Yes"
+levels(train_final$Survived)
+
+library(caret)  # this also calls the rpart
+set.seed(1099)
+inTrain <- createDataPartition(y=train_final$Survived, p=0.70, list=FALSE)
+train_set <- train_final[inTrain,]
+valid_set <- train_final[-inTrain,]
+
+set.seed(1099)
+rf_roc_model <- train(Survived~., method="rf", data=train_set, metric="ROC", trControl=trainControl(summaryFunction=twoClassSummary, classProbs=TRUE))
+print(rf_roc_model)
+print(rf_roc_model$finalModel)
+predict_valid_rf_roc <- predict(rf_roc_model, newdata=valid_set, type="prob") 
+# the output is a data frame with two columns No and Yes
+```
+
+
+```{r}
+# give an response variable and a prediction output from RF model
+library(pROC)
+roc_curve <- roc(response = valid_set$Survived, predictor = predict_valid_rf_roc$Yes)
+print(roc_curve)
+plot(roc_curve, print.thres="best", print.thres.best.method="closest.topleft")
+roc_result <- coords(roc_curve, "best", best.method="closest.topleft", ret=c("threshold", "accuracy"))
+print(roc_result)
+```
+
+## Calculate ROC Curve (using ROCR package)
+
+```{r}
+library(ROCR)
+pred <- prediction(predict_valid_rf_roc$Yes, valid_set$Survived)
+perf <- performance(pred, measure="tpr", x.measure="fpr")
+plot(perf)
+abline(a=0, b=1)
+auc <- performance(pred, measure = "auc")
+# print the AUC value (Area Under the Curve)
+print(auc@y.values)
+```
+
+
+
+
