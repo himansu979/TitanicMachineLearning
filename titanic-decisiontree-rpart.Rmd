@@ -1,0 +1,271 @@
+---
+title: "Decision Tree using Titanic Dataset"
+author: "Himansu Sahoo"
+date: "December 29, 2015"
+output: html_document
+---
+
+This is the example showing how to use decision tree algorithm in titanic dataset to predict survival rate of passengers. We will use R built-in function **rpart** to model the dataset.
+
+link to kaggle competition : <https://www.kaggle.com/c/titanic>
+
+### Step 1 : Getting the Data into R
+```{r}
+train_raw <- read.csv(file="../datasets/titanic-train.csv", na.strings=c(""," ", "NA", "NAN"))
+test_raw <- read.csv(file="../datasets/titanic-test.csv", na.strings=c(""," ", "NA", "NAN"))
+# stringsAsFactors=TRUE by default
+# treat all empty values, NAN as NA's
+```
+
+#### Check the training dataset
+```{r}
+dim(train_raw)
+# the dataset contains 891 rows/observations and 12 variables
+#nrow(train_raw); ncol(train_raw)
+#head(train_raw) # print first 6 rows
+#tail(train_raw) # print last 6 rows
+#str(train_raw) # will show class of each variable
+# 'data.frame':    891 obs. of  12 variables:
+#summary(train_raw)
+```
+
+Looking at `str(train_raw)`  
+Name       : Factor w/ 891 levels  
+Ticket     : Factor w/ 681 levels  
+Cabin      : Factor w/ 147 levels  
+
+Name and ticket are strings, they are read as factors.  
+Looking at `summary(train_raw)`, Age has 177 NA's, Cabin has 687 NA's, Embarked has 2 NA's.
+
+#### Check the testing dataset
+
+```{r}
+dim(test_raw)
+#str(test_raw)
+#'data.frame':    418 obs. of  11 variables:
+# one variable is less from training set, i.e. the response variable Survived
+#summary(test_raw)
+```
+
+Looking at `str(test_raw)`  
+Name       : Factor w/ 418 levels  
+Ticket     : Factor w/ 363 levels  
+Cabin      : Factor w/ 76 levels  
+
+Looking at *summary(test_raw)*, Fare has 1 NA, Cabin has 327 NA's.  
+
+#### Removing Variables
+
+First, look at first 100 rows : head(train_raw, n=100)
+PassengerId is unique of each row, Name is not necessary, Ticket also. Remove these three variables from train\_raw and make new dataset train\_final.
+using str(train_raw), we see that Cabin has 147 levels. remove this also from data.
+
+```{r}
+colnames(train_raw) # same as just names()
+remove_variables <- c("PassengerId", "Name", "Ticket", "Cabin")
+train_final <- train_raw[, !names(train_raw) %in% remove_variables]
+names(train_final)
+```
+
+#### Splitting data into training and validation set
+
+We will use the `createDataPartition` function in `caret` package to split the `train_data` into 70\% train\_set and valid\_set. Set seed in the beginning to reproduce the same result in future.
+
+```{r}
+library(caret)
+```
+
+```{r}
+#######train_final <- train_raw # assign only when you don't have train_final
+set.seed(1099)
+inTrain <- createDataPartition(y=train_final$Survived, p=0.70, list=FALSE)
+train_set <- train_final[inTrain,]
+valid_set <- train_final[-inTrain,]
+```
+
+```{r}
+train_per <- (nrow(train_set)/nrow(train_final))*100
+valid_per <- (nrow(valid_set)/nrow(train_final))*100
+# we printed below to make sure that train set have 70% and validation set has 30% observations.
+cat("******** training dataset is : ", train_per, "% \n")
+cat("******** validation dataset is : ", valid_per, "% \n")
+```
+
+
+### Step 2 : Building a Decision Tree (CART) Model using rpart function
+
+We will use the R build-in function **rpart** to build the **decisionTree** model (CART).
+Rpart stands for Recursive Partitionining and Regression Tree
+
+```{r}
+library(rpart)
+#dt_model <- rpart(Survived~., data=train_set)
+# # dt_model$method is anova, so manually put method as class
+dt_model <- rpart(Survived~., data=train_set, method="class")
+# here method is class by default for factor variable, class(Survived) = integer
+```
+
+#### Print different functions of the model
+
+```{r}
+class(dt_model) # output is rpart
+#str(dt_model), summary(dt_model) will print rubbish
+names(dt_model) # print the available functions for dt_model
+ls(dt_model) # this is same as above except alphabatically listed
+dt_model$call # rpart(formula = Survived ~ ., data = train_final, method = "class")
+dt_model$method # method="class"
+unlist(dt_model$control) # output is a list, so you have to unlist()
+# this contain parameters like minsplit, minbucket, cp
+
+dt_model$cptable # prints the cp table, the output is a matrix
+dt_model$variable.importance # output is a numeric vector
+print(dt_model) # it will show node), split, n, loss, yval, (yprob)
+printcp(dt_model) 
+# examine the cost complexity parameter (cp)
+# see cross-validation results
+# xerror is the relative error estimated by 10-fold cross-validation
+# this is konwn as cross-validation error
+```
+
+Root node error: 240/624 = 0.38462  
+1) root 624 240 0 (0.61538462 0.38461538)  
+2) Sex=male 399  75 0 (0.81203008 0.18796992)  
+Lets reproduce the above results:
+
+```{r}
+#length(train_set$Survived) #  624 total observations
+#table(train_set$Survived) # 0 is 384 and 1 is 240
+# root node will output 0, root node error 240/624=0.38462
+prop.table(table(train_set$Survived))
+#length(subset(train_set, Sex=="male")$Survived) # 399
+#table(subset(train_set, Sex=="male")$Survived) # 0 is 324 and 1 is 75
+# fist selection output will be 0
+prop.table(table(subset(train_set, Sex=="male")$Survived))
+```
+
+
+
+#### Plot the model
+
+```{r}
+# plot the cost complexity parameter (cp)
+plotcp(dt_model)
+
+# graphical display of the classification tree
+##plot(dt_model) # this will just plot empty tree
+plot(dt_model, uniform=TRUE, branch=0.6, margin=0.1)
+text(dt_model, all=TRUE, use.n=TRUE)
+
+library(rattle)
+fancyRpartPlot(dt_model)
+```
+
+#### Variable importance
+```{r}
+#dt_model$variable.importance # using available functions for model
+# sort in decreasing order
+sort(dt_model$variable.importance, decreasing=TRUE)
+# below uses caret package
+var_imp <- varImp(dt_model, scale=FALSE)
+# sorts in decreasing order, class(var_imp) is data.frame
+print(var_imp)
+#rownames(var_imp) # to get variable names
+#var_imp[, 1] or var_imp$Overall to get values
+```
+
+### Step 3 : Model Validation
+```{r echo=FALSE}
+#pred1 <- predict(dt_model) # output is a matrix, gives probability
+#head(pred1)
+#pred2 <- predict(dt_model, newdata=train_set) # explicitly give the train_set
+#head(pred2)
+# to make sure this gives the same result, compare each column
+#is_equal <- pred1[,1] == pred2[,1]
+#length(is_equal[is_equal==FALSE]) # this gives 0, means columns are equal
+```
+
+#### Check the model performance with train_set
+
+```{r}
+table(train_set$Survived)
+pred_train <- predict(dt_model, newdata=train_set, type="class")
+# this prints only the value with highest probability
+# output is a factor variable
+table(pred_train)
+confusionMatrix(pred_train, train_set$Survived)
+## Accuracy : 0.8333
+```
+
+#### Check the model performance with valid_set
+
+```{r}
+table(valid_set$Survived)
+pred_valid <- predict(dt_model, newdata=valid_set, type="class")
+table(pred_valid)
+confusionMatrix(pred_valid, valid_set$Survived)
+## Accuracy : 0.8127
+```
+
+
+### Step 3 :  Prunning the tree
+
+```{r}
+dt_model$cptable # prints the cp table, the output is a matrix
+colnames(dt_model$cptable)
+
+# get the minimun cross-validation error of the classification tree model
+cat("******** minimum CV error : ", min(dt_model$cptable[, "xerror"]), "\n")
+# you can also use dt_model$cptable[, 4], 4th column is xerror
+# get the row number/position for the minimum cross-validation error
+mincv_record <- which.min(dt_model$cptable[,"xerror"])
+# get the cost complexicity parameter of the record with minimum CV error
+mincv_cp <- dt_model$cptable[mincv_record,"CP"]
+cat("******** CP for minimum CV : ", mincv_cp, "\n")
+
+# prune the tree by setting the cp parameter to the CP value of the record with minimum cross-validation error
+#dt_prune_model <- prune(dt_model, cp = dt_model.rpart$cptable[which.min(dt_model$cptable[,"xerror"]),"CP"])
+dt_prune_model <- prune(dt_model, cp=mincv_cp)
+fancyRpartPlot(dt_prune_model)
+```
+
+#### Apply the pruned tree model to valid set
+
+```{r}
+table(valid_set$Survived)
+pred_valid_pruned <- predict(dt_prune_model, newdata=valid_set, type="class")
+table(pred_valid_pruned)
+confusionMatrix(pred_valid_pruned, valid_set$Survived)
+## Accuracy : 0.8052
+```
+
+### Step 4 : Calculate ROC Curve using ROCR package
+
+```{r}
+library(ROCR)
+pred_valid_prob <- predict(dt_prune_model, newdata=valid_set)
+# this will output probabaility
+roc_pred <- prediction(pred_valid_prob[, 2], valid_set$Survived)
+roc_perf <- performance(roc_pred, measure="tpr", x.measure="fpr")
+
+roc_auc <- performance(roc_pred, measure="auc", x.measure="cutoff")
+auc <- unlist(roc_auc@y.values)
+cat("********* Value of AUC : ", auc, "\n")
+plot(roc_perf, colorize=T, main=paste("AUC: ", roc_auc@y.values), lwd=2)
+abline(a=0, b=1, lwd=2)
+```
+
+### Step 5 : Apply the model on test dataset
+```{r}
+pred_test <- predict(dt_prune_model, newdata=test_raw, type="class")
+submit <- data.frame(PassengerId = test_raw$PassengerId, Survived = pred_test)
+#write.csv(submit, file="output-DT-Rpart.csv", row.names=FALSE)
+```
+
+
+
+
+
+
+
+
+
