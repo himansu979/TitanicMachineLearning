@@ -1,0 +1,321 @@
+---
+title: "Decision Tree using Titanic Dataset (CARET package)"
+author: "Himansu Sahoo"
+date: "December 29, 2015"
+output: html_document
+---
+
+This is the example showing how to use decision tree algorithm in titanic dataset to predict survival rate of passengers.
+
+link to kaggle competition : <https://www.kaggle.com/c/titanic>
+
+### Step 1 : Getting the Data into R
+```{r}
+train_raw <- read.csv(file="../datasets/titanic-train.csv", na.strings=c(""," ", "NA", "NAN"))
+test_raw <- read.csv(file="../datasets/titanic-test.csv", na.strings=c(""," ", "NA", "NAN"))
+# stringsAsFactors=TRUE by default
+# treat all empty values, NAN as NA's
+```
+
+```{r}
+library(dplyr)
+# convert into dplyr tbl format
+train_raw <- tbl_df(train_raw)
+test_raw <- tbl_df(test_raw)
+```
+
+#### Check the training dataset
+```{r}
+dim(train_raw)
+# the dataset contains 891 rows/observations and 12 variables
+#nrow(train_raw); ncol(train_raw)
+#head(train_raw) # print first 6 rows
+#tail(train_raw) # print last 6 rows
+#str(train_raw) # will show class of each variable
+# 'data.frame':    891 obs. of  12 variables:
+#summary(train_raw)
+glimpse(train_raw) # same as str() in base R
+```
+
+Looking at `str(train_raw)`  
+Name       : Factor w/ 891 levels  
+Ticket     : Factor w/ 681 levels  
+Cabin      : Factor w/ 147 levels  
+
+Note that Name and ticket are strings, they are read as factors.  
+Looking at `summary(train_raw)`, Age has 177 NA's, Cabin has 687 NA's, Embarked has 2 NA's.
+
+#### Check the testing dataset
+
+```{r}
+dim(test_raw)
+#str(test_raw)
+#'data.frame':    418 obs. of  11 variables:
+#summary(test_raw)
+glimpse(test_raw)
+```
+
+Looking at `str(test_raw)`  
+Name       : Factor w/ 418 levels  
+Ticket     : Factor w/ 363 levels  
+Cabin      : Factor w/ 76 levels  
+
+Looking at *summary(test_raw)*, Fare has 1 NA, Cabin has 327 NA's.  
+
+#### Removing Variables
+passengerId, Name are an unique identifier, remove this from the modeling
+remove Ticket, Cabin
+```{r}
+train_final <- train_raw %>% select(-c(PassengerId, Name, Ticket, Cabin))
+test_final <- test_raw
+```
+
+#### Missing Value treatment
+```{r}
+colSums(is.na(train_final))
+train_final$Age[is.na(train_final$Age)] <- median(train_final$Age, na.rm=TRUE)
+
+summary(train_final$Embarked)
+#table() willn't print NA's
+# maximum observations have S, replace NA's by S
+train_final$Embarked[is.na(train_final$Embarked)] <- "S"
+colSums(is.na(train_final))
+```
+
+Change the response variable to a factor variable, otherwise CART train function will give problem. It is thinking the problem as regression and outcome has only two levels.
+Also, change the level names of the response variable, otherwise will give problem when calculating class probabilites.
+
+```{r}
+train_final$Survived <- as.factor(train_final$Survived)
+#class(train_final$Survived) # factor
+str(train_final$Survived) # Factor w/ 2 levels "0","1":
+#levels(train_final$Survived)[levels(train_final$Survived)=="0"] <- "No"
+#levels(train_final$Survived)[levels(train_final$Survived)=="1"] <- "Yes"
+#levels(train_final$Survived)
+```
+
+#### Splitting data into training and validation set
+
+We will use the `createDataPartition` function in `caret` package to split the `train_data` into 70\% train\_set and valid\_set. Set seed in the beginning to reproduce the same result in future.
+
+```{r}
+library(caret)
+```
+
+```{r}
+set.seed(1099)
+inTrain <- createDataPartition(y=train_final$Survived, p=0.70, list=FALSE)
+train_set <- train_final[inTrain,]
+valid_set <- train_final[-inTrain,]
+```
+
+```{r}
+train_per <- (nrow(train_set)/nrow(train_final))*100
+test_per <- (nrow(valid_set)/nrow(train_final))*100
+cat("******** training dataset is : ", train_per, "% \n")
+cat("******** testing dataset is : ", test_per, "% \n")
+```
+
+### Step 2 : Building a Decision Tree (CART) Model using CARET package
+
+We will use the `caret` package in R to build the **decisionTree** model (CART) with method **rpart**.
+
+```{r}
+library(rpart)
+dt_model <- train(Survived~., method="rpart", data=train_set)
+```
+
+After running the model, you will get the following Warnings. Make sure to change the target variable to a factor variable.
+
+```
+## Warning in train.default(x, y, weights = w, ...): You are trying to do
+## regression and your outcome only has two possible values Are you trying to
+## do classification? If so, use a 2 level factor as your outcome column.
+```
+
+```
+## Warning in nominalTrainWorkflow(x = x, y = y, wts = weights, info =
+## trainInfo, : There were missing values in resampled performance measures.
+```
+
+#### Print different Model functions
+
+```{r}
+class(dt_model) # "train"         "train.formula"
+print(dt_model) # str(), summary() will print rubbish
+names(dt_model)
+ls(dt_model)
+dt_model$method
+dt_model$modelType
+dt_model$call
+dt_model$metric
+dt_model$perfNames
+dt_model$bestTune
+dt_model$coefnames # will print long list
+dt_model$xlevels # will print long list
+dt_model$results
+dt_model$finalModel # output is rpart
+dt_model$bestTune
+```
+
+#### Plotting the decision tree
+```{r fig.width=4, fig.height=4}
+plot(dt_model)
+
+##plot(dt_model$finalModel) # this will just plot an empty tree
+plot(dt_model$finalModel, uniform=TRUE, branch=0.6, margin=0.1)
+text(dt_model$finalModel, all=TRUE, use.n=TRUE)
+
+library(rattle)
+fancyRpartPlot(dt_model$finalModel)
+```
+
+#### Variable Importance
+```{r fig.width=4, fig.height=4}
+var_imp <- varImp(dt_model, scale=FALSE)
+# by default varImp returns scaled results in the range 0-100, need to put scale=FALSE
+print(var_imp)
+# varImp(dt_model$finalModel) # output is a dataframe
+
+plot(var_imp, top=10)
+```
+
+### Step 3 : Model Validation
+#### Check the model performance with train_set
+
+```{r}
+#predict(dt_model)
+#Error in eval(expr, envir, enclos) : object 'Sexmale' not found
+
+pred_train1 <- predict(dt_model, newdata=train_set)
+##pred_train1 <- predict(dt_model, newdata=train_set, type="raw") # same as above, default is "raw" for train object
+#print(class(pred_train1)) # this is a factor variable
+print(confusionMatrix(pred_train1, train_set$Survived))
+## Accuracy : 0.8096
+
+pred_train2_prob <- predict(dt_model$finalModel) # output is a matrix, it will output probability
+#pred_train2_prob <- predict(dt_model$finalModel, type="prob") # same as above, default is prob for rpart object
+print(head(pred_train2_prob))
+# the deafult is to give probability, to get class of each observation, use type="class"
+pred_train2_class <- predict(dt_model$finalModel, type="class")
+print(confusionMatrix(pred_train2_class, train_set$Survived))
+## Accuracy : 0.8096
+
+# if you will apply to a newdata, gives problem
+#predict(dt_model$finalModel, newdata=train_set)
+#Error in eval(expr, envir, enclos) : object 'Sexmale' not found
+
+# in caret train type is either raw or prob
+table(valid_set$Survived)
+pred_valid <- predict(dt_model, newdata=valid_set) # output is a factor variable
+###pred_valid <- predict(dt_model, newdata=valid_set, type="raw") # same as above, default is raw for train object
+table(pred_valid)
+print(confusionMatrix(pred_valid, valid_set$Survived))
+## Accuracy : 0.812
+
+#Error in predict.train(dt_model, newdata = valid_set, type = "class") : 
+#  type must be either "raw" or "prob"
+
+```
+
+```
+# for train object, default value of type="raw" gives factor variable
+# if you will give type="prob" will give problem:
+# Error in .data.frame(out, , obsLevels, drop = FALSE) : 
+#  undefined columns selected
+# you will encounter this while calculating ROC curve
+```
+
+#### Check the model performance with valid_set
+
+Do the missing value treatment, otherwise confusionMatrix will give this message.
+```
+Error in table(data, reference, dnn = dnn, ...) : 
+  all arguments must have the same length
+```
+
+```{r}
+table(valid_set$Survived)
+pred_valid <- predict(dt_model, newdata=valid_set)
+table(pred_valid)
+confusionMatrix(pred_valid, valid_set$Survived)
+## Accuracy : 0.812
+```
+
+### Step 4 : Calculate ROC Curve using ROCR package
+
+In order to plot ROC curve, we need to calculate probabilities for each level of the response variable.
+```
+When you ask for class probabilities, model predictions are a data frame with separate columns for each class/level. If the response variable doesn't have levels that are valid column names, data.frame converts then to valid names. That creates a problem because the code is looking for a specific name but the data frame as a different (but valid) name.
+```
+0 and 1 are not valid R variable names, we get errors when generating class probabilities.
+change them to "NO" and "Yes"
+```
+Error in `[.data.frame`(out, , obsLevels, drop = FALSE) : 
+  undefined columns selected
+```
+
+```{r fig.width=4, fig.height=4}
+levels(train_set$Survived)[levels(train_set$Survived)=="0"] <- "No"
+levels(train_set$Survived)[levels(train_set$Survived)=="1"] <- "Yes"
+levels(train_set$Survived)
+
+levels(valid_set$Survived)[levels(valid_set$Survived)=="0"] <- "No"
+levels(valid_set$Survived)[levels(valid_set$Survived)=="1"] <- "Yes"
+levels(valid_set$Survived)
+
+dt_model_prob <- train(Survived~., data=train_set, method="rpart")
+
+library(ROCR)
+# Calculate ROC Curve using ROCR package
+pred_valid_prob <- predict(dt_model_prob, newdata=valid_set, type="prob") 
+# this will output probabaility
+roc_pred <- prediction(pred_valid_prob[, 2], valid_set$Survived)
+roc_perf <- performance(roc_pred, measure="tpr", x.measure="fpr")
+
+roc_auc <- performance(roc_pred, measure="auc", x.measure="cutoff")
+auc <- unlist(roc_auc@y.values)
+cat("*********** Value of AUC : ", auc, "\n") # AUC :  0.8107963
+
+plot(roc_perf, colorize=T, main=paste("AUC: ", roc_auc@y.values), lwd=2)
+abline(a=0, b=1, lwd=2)
+```
+
+### Step 5 : Apply the model on test dataset
+```{r}
+# dt_model$coefnames
+#"Pclass"    "Sexmale"   "Age"       "SibSp"     "Parch"     "Fare"      "EmbarkedQ" "EmbarkedS"
+# Cabin is not used in the model, so don't do anything.
+
+colSums(is.na(test_final))
+test_final$Age[is.na(test_final$Age)] <- median(test_final$Age, na.rm=TRUE)	
+test_final$Fare[is.na(test_final$Fare)] <- median(test_final$Fare, na.rm=TRUE)	
+colSums(is.na(test_final))
+	
+pred_test <- predict(dt_model, newdata=test_final)
+dim(test_final) # 418 11
+length(pred_test) # 331
+###???? why the output differs from data rows??? may be due to NA values
+
+
+table(pred_test)
+submit_data <- data.frame(PassengerId = test_final$PassengerId, Survived = pred_test)
+#write.csv(submit_data, file="output-DT-caret.csv", row.names=FALSE)
+
+# make sure to check that there are no NA's
+str(submit_data)
+print(summary(submit_data))
+
+#Error in data.frame(PassengerId = test_raw$PassengerId, Survived = pred_test) : 
+#  arguments imply differing number of rows: 418, 331
+
+```
+
+
+
+
+
+
+
+
+
