@@ -1,0 +1,269 @@
+---
+title: "Random Forest using Titanic Dataset"
+author: "Himansu Sahoo"
+date: "January 14, 2015"
+output: html_document
+---
+
+This is the example showing how to use random forest algorithm in titanic dataset to predict survival rate of passengers. We will use R built-in function **randomforest** to model the dataset.
+
+link to kaggle competition : <https://www.kaggle.com/c/titanic>
+
+### Step 1 : Getting the Data into R
+```{r}
+train_raw <- read.csv(file="../datasets/titanic-train.csv", na.strings=c(""," ", "NA", "NAN"))
+test_raw <- read.csv(file="../datasets/titanic-test.csv", na.strings=c(""," ", "NA", "NAN"))
+# stringsAsFactors=TRUE by default
+# treat all empty values, NAN as NA's
+```
+
+#### Check the training dataset
+```{r}
+# use dplyr
+library(dplyr)
+train_raw <- tbl_df(train_raw)
+test_raw <- tbl_df(test_raw)
+
+dim(train_raw)
+# the dataset contains 891 rows/observations and 12 variables
+#nrow(train_raw); ncol(train_raw)
+#head(train_raw) # print first 6 rows
+#tail(train_raw) # print last 6 rows
+#str(train_raw) # will show class of each variable
+# 'data.frame':    891 obs. of  12 variables:
+#summary(train_raw)
+#glimpse(train_raw) # dplyr version of str()
+# names(train_raw) # also same as colnames(train_raw)
+```
+
+Looking at `str(train_raw)`  
+Name       : Factor w/ 891 levels  
+Ticket     : Factor w/ 681 levels  
+Cabin      : Factor w/ 147 levels  
+
+Name and ticket are strings, they are read as factors.  
+Looking at `summary(train_raw)`, Age has 177 NA's, Cabin has 687 NA's, Embarked has 2 NA's.
+
+#### Check the testing dataset
+
+```{r}
+dim(test_raw)
+#str(test_raw)
+#'data.frame':    418 obs. of  11 variables:
+# one variable is less from training set, i.e. the response variable Survived
+#summary(test_raw)
+```
+
+Looking at `str(test_raw)`  
+Name       : Factor w/ 418 levels  
+Ticket     : Factor w/ 363 levels  
+Cabin      : Factor w/ 76 levels  
+
+Looking at *summary(test_raw)*, Fare has 1 NA, Cabin has 327 NA's.  
+
+#### Removing Variables
+
+First, look at first 100 rows : head(train_raw, n=100)
+or dplyr version print(train_raw, n=100)
+PassengerId is unique of each row, Name is not necessary, Ticket also. Remove these three variables from train\_raw and make new dataset train\_final.
+using str(train_raw), we see that Cabin has 147 levels. remove this also from data.
+
+```{r}
+colnames(train_raw) # same as just names()
+remove_variables <- c("PassengerId", "Name", "Ticket", "Cabin")
+##train_final <- train_raw[, !names(train_raw) %in% remove_variables]
+train_final <- train_raw %>% select(-c(PassengerId, Name, Ticket, Cabin))
+names(train_final)
+test_final <- test_raw
+```
+
+#### Checking NA values
+```{r}
+colSums(is.na(train_final))
+#summary(train_final)
+print(class(train_final$Survived))
+print(str(train_final$Survived))
+train_final$Survived <- as.factor(train_final$Survived)
+print(class(train_final$Survived))
+print(str(train_final$Survived))
+```
+Age has 177, Embarked has 2 missing values. We have changed the response variable to a factor variable, otherwise randomForest formula will give problem.
+
+#### Splitting data into training and validation set
+
+We will use the `createDataPartition` function in `caret` package to split the `train_data` into 70\% train\_set and valid\_set. Set seed in the beginning to reproduce the same result in future.
+
+```{r}
+library(caret)
+```
+
+```{r}
+#######train_final <- train_raw # assign only when you don't have train_final
+set.seed(1099)
+inTrain <- createDataPartition(y=train_final$Survived, p=0.70, list=FALSE)
+train_set <- train_final[inTrain,]
+valid_set <- train_final[-inTrain,]
+```
+
+```{r}
+train_per <- (nrow(train_set)/nrow(train_final))*100
+valid_per <- (nrow(valid_set)/nrow(train_final))*100
+# we printed below to make sure that train set have 70% and validation set has 30% observations.
+cat("******** training dataset is : ", train_per, "% \n")
+cat("******** validation dataset is : ", valid_per, "% \n")
+```
+
+
+### Step 2 : Building a Random Forest Model using randomforest function
+
+We will use the R built-in function **randomforest** to build the **randomforest** model.
+
+```{r}
+library(randomForest)
+#rf_model <- randomForest(Survived~., data=train_set)
+# explicitly mention variable names
+#rf_model <- randomForest(Survived~Pclass+Sex+Age+SibSp+Parch+Fare+Embarked, data=train_set)
+# this is same as above, 7 predictors
+# remove the missing values, Age and Embarked
+rf_model <- randomForest(Survived~Pclass+Sex+SibSp+Parch+Fare, data=train_set)
+# make sure that response variable is factor variable
+```
+
+remove the missing values before doing modeling. Change the response variable to a factor variable for classification.
+```
+## Warning in randomForest.default(m, y, ...): The response has five or fewer
+## unique values. Are you sure you want to do regression?
+```
+```
+Error in na.fail.default(list(Survived = c(1L, 2L, 2L, 1L, 2L, 2L, 2L,  : 
+  missing values in object
+```
+
+#### Print different model functions
+
+```{r}
+class(rf_model) # "randomForest.formula" "randomForest"
+print(rf_model)
+names(rf_model)
+ls(rf_model)
+
+rf_model$call
+rf_model$type # "classification"
+rf_model$classes # "0" "1"
+rf_model$confusion # print confusion matrix
+rf_model$importance # MeanDecreaseGini importance, output is a matrix
+rf_model$mtry # 2
+rf_model$ntree # 500
+```
+
+#### Plot the Model
+```{r fig.width=4, fig.height=4}
+plot(rf_model) # plot Error vrs. number of trees
+```
+
+#### Print variable importance
+```{r}
+rf_model$importance
+
+var_imp <- varImp(rf_model) # takes a randomForest object
+class(var_imp) # data.frame
+print(var_imp)
+rownames(var_imp)
+colnames(var_imp)
+
+# add row names as one variable, and sort by decreasing
+var_imp$var <- rownames(var_imp)
+print(var_imp)
+var_imp <- var_imp %>% arrange(desc(Overall))
+print(var_imp)
+```
+
+### Step 3 : Model Validation
+```{r}
+pred1 <- predict(rf_model)
+class(pred1) # output is a factor variable
+
+print(confusionMatrix(pred1, train_set$Survived))
+```
+
+#### Check the model performance with train_set
+
+```{r}
+#pred2 <- predict(rf_model, newdata=train_set) # specify the dataset name
+pred2 <- predict(rf_model, newdata=train_set, type="class") # same as above, type is class by default
+
+# is pred1 is equal to pred2
+is_equal <- pred1==pred2
+cat("***** entries doesn't match ", length(is_equal[is_equal==FALSE]), "\n")
+# ?? why 54 predictions are wrong.
+# why giving the dataset name, gives different result
+
+print(confusionMatrix(pred2, train_set$Survived))
+
+pred_train_prob <- predict(rf_model, newdata=train_set, type="prob")
+class(pred_train_prob)  # output is "matrix" "votes" 
+print(head(pred_train_prob))
+
+```
+
+#### Check the model performance with valid_set
+
+```{r}
+pred_valid <- predict(rf_model, newdata=valid_set, type="class") # the default value of type is class
+print(confusionMatrix(pred_valid, valid_set$Survived))
+```
+
+### Step 4 : Calculate ROC Curve using ROCR package
+```{r fig.width=4, fig.height=4}
+library(ROCR)
+	
+pred_valid_prob <- predict(rf_model, newdata=valid_set, type="prob") # this will output probabaility
+
+roc_pred <- prediction(pred_valid_prob[, 2], valid_set$Survived)
+roc_perf <- performance(roc_pred, measure="tpr", x.measure="fpr")
+
+roc_auc <- performance(roc_pred, measure="auc", x.measure="cutoff")
+auc <- unlist(roc_auc@y.values)
+cat("********* Value of AUC : ", auc, "\n") # AUC :  0.8577834
+
+plot(roc_perf, colorize=T, main=paste("AUC: ", roc_auc@y.values), lwd=2)
+abline(a=0, b=1, lwd=2)	
+
+```
+
+### Step 5 : Apply the model on test dataset
+
+Replace the NA values, otherwise you will get the following error message:
+```
+#Error in data.frame(PassengerId = test_final$PassengerId, Survived = pred_test) : 
+#  row names contain missing values
+```
+
+
+```{r}
+rf_model$call
+print(colSums(is.na(test_final)))
+# Fare is the variable in test data contains NA, replace this by median value
+test_final$Fare[is.na(test_final$Fare)] <- median(test_final$Fare, na.rm=TRUE)
+
+pred_test <- predict(rf_model, newdata=test_final, type="class")
+submit_data <- data.frame(PassengerId = test_final$PassengerId, Survived = pred_test)	
+
+#write.csv(submit_data, file="output-RF-randomforest.csv", row.names=FALSE)
+
+# make sure to check that there are no NA's
+str(submit_data)
+print(summary(submit_data))
+```
+
+
+
+
+
+
+
+
+
+
+
+
